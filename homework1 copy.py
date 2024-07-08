@@ -3,10 +3,7 @@ import os
 import pandas as pd
 import numpy as np
 
-PATH = r'/Users/allisonelmer/Documents/GitHub/homework-1-amelmer-1'
-
-fname = 'Table.csv'
-bea_df = pd.read_csv(os.path.join(PATH, fname), skiprows=[0,1,2])
+bea_df = pd.read_csv('bea_data.csv', skiprows=[0,1,2])
 # the first three rows contain a description of the table, 
 # so they are skipped
 
@@ -48,9 +45,8 @@ num_cols_bea = ['year', 'military', 'manufacturing', 'total']
 bea_df_final = object_to_numeric(bea_df_final, num_cols_bea)
 
 
-fname = 'ssamatab1.xlsx'
 bls_df = pd.read_excel(
-    os.path.join(PATH, fname), skiprows=[0,1,3]).rename(columns={'Area':'msa'})
+    'bls_data.xlxs', skiprows=[0,1,3]).rename(columns={'Area':'msa'})
 
 def rename_cols(df):
     df.columns = df.columns.str.lower()
