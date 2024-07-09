@@ -1,93 +1,96 @@
-## Allison Elmer
 import os
 import pandas as pd
 import numpy as np
 
-bea_df = pd.read_csv('bea_data.csv', skiprows=[0,1,2])
-# the first three rows contain a description of the table, 
-# so they are skipped
+# Clean Bureau of Labor Statistics Data
+def clean_bls_df(fname):
+    # read in data 
+    df = pd.read_excel(fname, 
+    skiprows=[0,1,3]).rename(columns={'Area':'msa'})
 
-bea_df_to_reshape = bea_df.drop(['GeoFips', 'LineCode'], axis=1)
-bea_df_long = bea_df_to_reshape.melt(
-    id_vars=['GeoName', 'Description'], value_vars=['2005', '2006', '2007'], 
-    var_name='year')
-    #columns '2007', '2006', and '2005' need to become one column (year)
-bea_df_reshaped = bea_df_long.pivot_table(
-    index=['GeoName','year'], values='value', columns='Description', 
-    aggfunc='first').reset_index()
-    # column 'Description' needs to become three columns 
-    # ('military', 'manufacturing', and 'total')
-    # Source: 
-    # https://stackoverflow.com/questions/49943627/pivoting-dataframe-with-multiple-columns-for-the-index
-
-bea_df_final = bea_df_reshaped.rename(
-    columns={"GeoName":"county", 
-             "      Manufacturing":"manufacturing", 
-             "      Military":"military", 
-             "Total employment (number of jobs)":"total"})
-
-def recode_na(df, nan_vals):
-    df = df.replace(nan_vals, pd.NA)
-    # Source: 
-    # https://stackoverflow.com/questions/34794067/how-to-set-a-cell-to-nan-in-a-pandas-dataframe
-    return df
-
-bea_nan_vals = ['(D)', '(NA)']
-bea_df_final = recode_na(bea_df_final, bea_nan_vals)
-
-def object_to_numeric(df, num_cols):
-    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
-    # Source: 
-    # https://stackoverflow.com/questions/36814100/pandas-to-numeric-for-multiple-columns
-    return df
-
-num_cols_bea = ['year', 'military', 'manufacturing', 'total']
-bea_df_final = object_to_numeric(bea_df_final, num_cols_bea)
-
-
-bls_df = pd.read_excel(
-    'bls_data.xlxs', skiprows=[0,1,3]).rename(columns={'Area':'msa'})
-
-def rename_cols(df):
+    # clean column headers & remove unnecessary columns
     df.columns = df.columns.str.lower()
     df.columns = df.columns.str.replace(" ", "_", regex=True)
-    return df
+    df = df[['msa', 'year', 'month', 'unemployment_rate']]
 
-bls_df_final = rename_cols(bls_df)
-bls_df_final = bls_df_final[['msa', 'year', 'month', 'unemployment_rate']]
-bls_nan_vals = ['(n)']
-bls_df_final = recode_na(bls_df_final, bls_nan_vals)
-num_cols_bls = ['unemployment_rate']
-bls_df_final = object_to_numeric(bls_df_final, num_cols_bls)
+    # recode na values & convert numbers to numeric
+    nan_vals = ['(n)']
+    df = df.replace(nan_vals, pd.NA)
+    num_cols = ['unemployment_rate']
+    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
 
-bls_df_to_merge = bls_df_final.groupby(['year', 'msa'], as_index=False).agg(
+    df_to_merge = df.groupby(['year', 'msa'], as_index=False).agg(
     {'month':'first', 'unemployment_rate':'mean'}).drop(columns='month')
 
+    return df_to_merge
 
-fname = 'geocorr2018_2327802044.csv'
-geo_df = pd.read_csv(
-    os.path.join(PATH, fname), encoding='latin-1', skiprows=[1])
-  # Source for encoding: 
-    # https://bobbyhadz.com/blog/python-unicodedecodeerror-utf-8-codec-cant-decode-byte
+bls_fname = 'bls_data.xlsx'
+bls_data = clean_bls_df(bls_fname)
 
-#geo_df_dropped_rows = geo_df[geo_df['cbsaname10'] != '99999']
-geo_df_dropped_cols = geo_df[['cntyname', 'cbsaname10']]
-geo_nan_vals = ['99999']
-geo_df_dropped_cols = recode_na(geo_df_dropped_cols, geo_nan_vals)
-geo_df_dropped_rows = geo_df_dropped_cols.dropna()
+# Clean Bureau of Economic Analysis Data
+def clean_bea_df(fname):
+    # read in data
+    df = pd.read_csv(fname, skiprows=[0,1,2])
 
-geo_df_final = geo_df_dropped_cols.rename(
-    columns={'cntyname': 'county', 
-             'cbsaname10':'msa'})
+    # reshape
+    df = df.drop(['GeoFips', 'LineCode'], axis=1)
+    df = df.melt(
+      id_vars=['GeoName', 'Description'], value_vars=['2005', '2006', '2007'],
+      var_name='year')
+    df = df.pivot_table(
+      index=['GeoName', 'year'], values='value', columns='Description',
+      aggfunc='first').reset_index()
 
-geo_df_to_merge = geo_df_final.replace(
-    to_replace=[
-      'Metropolitan Statistical Area', 'Micropolitan Statistical Area'], 
-    value='MSA', regex=True)
-geo_df_to_merge['county'] = geo_df_final['county'].replace(
-    to_replace=" ", value=", ", regex=True)
+    # rename columns
+    df = df.rename(
+      columns={'GeoName':'county',
+      "      Manufacturing":"manufacturing",
+      "      Military":"military",
+      "Total employment (number of jobs)":"total"}
+    )
 
-merge_bea_geo = bea_df_final.merge(geo_df_to_merge, how='outer', indicator=True)
+    # recode na values
+    nan_vals = ['(D)', '(NA)']
+    df = df.replace(nan_vals, pd.NA)
+
+    # convert cols to numeric
+    num_cols = ['year', 'military', 'manufacturing', 'total']
+    df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce')
+
+    return df
+
+bea_fname = 'bea_data.csv'
+bea_data = clean_bea_df(bea_fname)
+
+# Clean Geo Data
+def clean_geo_df(fname):
+    # read in dataset
+    df = pd.read_csv(fname, encoding='latin-1', skiprows=[1])
+    df = df[['cntyname', 'cbsaname10']]
+
+    # recode & drop na values
+    nan_vals = ['99999']
+    df = df.replace(nan_vals, pd.NA)
+    df = df.dropna()
+
+    # rename columns
+    df = df.rename(
+      columns={'cntyname': 'county', 'cbsaname10':'msa'}
+    )
+
+    # replace values
+    df = df.replace(
+      to_replace=[
+      'Metropolitan Statistical Area', 'Micropolitan Statistical Area'], value='MSA', regex=True)
+    df['county'] = df['county'].replace(to_replace=" ", value=", ", regex=True)
+
+    return df
+
+geo_fname = 'geo_data.csv'
+geo_data = clean_geo_df(geo_fname)
+
+# merge datasets
+merge_bea_geo = bea_data.merge(geo_data, how='outer', indicator=True)
 
 def merge_test(new_dataframe):
     test = new_dataframe[new_dataframe['_merge'] != 'both']
@@ -100,60 +103,54 @@ def merge_test(new_dataframe):
       # https://stackoverflow.com/questions/19828822/how-to-check-whether-a-pandas-dataframe-is-empty
 
 merge_test(merge_bea_geo)
-merge_bea_geo_final = merge_bea_geo.drop(columns='_merge')
+merge_bea_geo = merge_bea_geo.drop(columns='_merge')
 
 final_merge = pd.merge(
-    merge_bea_geo_final, bls_df_to_merge, how='outer', on=['msa', 'year'], 
+    merge_bea_geo, bls_data, how='outer', on=['msa', 'year'], 
     indicator=True)
 merge_test(final_merge)
-  # left_only and right_only columns would need to be addressed
+  # left_only and right_only columns need to be addressed
 
-merged_df_final = final_merge.groupby(['year', 'msa'], as_index=False).agg(
+final_df = final_merge.groupby(['year', 'msa'], as_index=False).agg(
     {'county':'first', 
     'manufacturing':sum, 
     'military':sum, 
     'total':sum, 
     'unemployment_rate':'mean'})
-merged_df_final = merged_df_final.dropna().drop(columns='county')
+final_df = final_df.dropna().drop(columns='county')
 
-df_2005_6 = merged_df_final[merged_df_final['year'] != 2007]
-# dropping 2007 because it is not necessary for the calculations
+# calculate average unemployment rate changes
+df_calc = final_df[final_df['year'] != 2007]
 
-df_2005_6['change_ur'] = df_2005_6.groupby(['msa'])[
-    'unemployment_rate'].diff().fillna(df_2005_6['unemployment_rate'])
-    # Source: 
-    # https://stackoverflow.com/questions/51496823/subtract-row-from-another-row-of-same-column-with-pandas 
-change = df_2005_6.groupby('msa')['change_ur'].transform('min')
-df_2005_6['change_ur'] = np.where(df_2005_6['year'] == 2005, change, 'nan')
-# using the groupby method assigns the difference in unemployment rate
-# to the 2006 rows, so this reassigns it to the 2005 rows
-# Source: 
-# https://stackoverflow.com/questions/75169766/replace-column-values-with-smallest-value-in-group
-df_2005_6['change_ur'] = pd.to_numeric(df_2005_6['change_ur'], errors='coerce')
+def calculate_ur_change(df):
+    df['change_ur'] = df.groupby(['msa'])[
+      'unemployment_rate'].diff().fillna(df_calc['unemployment_rate'])
+    change = df.groupby('msa')['change_ur'].transform('min')
+    df['change_ur'] = np.where(df['year'] == 2005, change, pd.NA)
+    df['change_ur'] = pd.to_numeric(df['change_ur'], errors='coerce')
+
+    return df
+
+df_calc = calculate_ur_change(df_calc)
 
 def create_quartile(df, column_names, year):
     for name in column_names:
       df[name + '_percent'] = np.where(
         df['year'] == year, df[name]/df['total'], 'nan')
-        # Source: 
-        # https://stackoverflow.com/questions/19913659/how-do-i-create-a-new-column-where-the-values-are-selected-based-on-existing-col
       df[name + '_percent'] = pd.to_numeric(df[name + '_percent'], 
         errors='coerce')
       df[name + '_quartile'] = pd.qcut(df[name + '_percent'], 4, labels=False)
-      # Source: 
-      # https://stackoverflow.com/questions/38356156/dataframe-add-column-whose-values-are-the-quantile-number-rank-of-an-existing-c
     return df
 
 col_names = ['military', 'manufacturing']
-create_quartile(df_2005_6, col_names, 2005)
+create_quartile(df_calc, col_names, 2005)
 
-df_2005 = df_2005_6[df_2005_6['year'] == 2005]
+df_2005 = df_calc[df_calc['year'] == 2005]
 
 def av_change(df, column_names):
     for name in column_names:
       av_change_ur = df.groupby(name+'_quartile').agg(
         av_change_ur = ('change_ur', 'mean')).squeeze()
-        # Source: https://datatofish.com/pandas-dataframe-to-series/
       print(
         f'average change in unemployment rate for {name} employment quartiles')
       print(av_change_ur)
